@@ -6,34 +6,34 @@ services:
       POSTGRES_DB: barterexchange
       POSTGRES_USER: barterexchange
       POSTGRES_PASSWORD: barterexchange123
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
 
   backend:
-    build: .
+    image: barterexchange-backend:latest
     container_name: barterexchange-backend
-    ports:
-      - "8080:8080"
     depends_on:
       - postgres
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/barterexchange
-      SPRING_DATASOURCE_USERNAME: trade
-      SPRING_DATASOURCE_PASSWORD: trade123
+      SPRING_DATASOURCE_USERNAME: barterexchange
+      SPRING_DATASOURCE_PASSWORD: barterexchange123
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_JPA_SHOW_SQL: "true"
+    ports:
+      - "8080:8080"
+
+  frontend:
+    image: barterexchange-frontend:latest
+    container_name: barterexchange-frontend
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://backend:8080
+    ports:
+      - "3001:80"
 
 volumes:
   pgdata:
-
-#  frontend:
-#    build: ./frontend
-#    container_name: frontend
-#    ports:
-#      - "3000:3000"
-#    environment:
-#      - NEXT_PUBLIC_API_BASE_URL=http://backend:8080
-#    depends_on:
-#      - backend

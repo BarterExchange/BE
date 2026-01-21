@@ -1,1 +1,132 @@
+name: be-cd
+
+on:
+  workflow_run:
+    workflows: ["be-ci"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout (to get compose/nginx files)
+        uses: actions/checkout@v4
+
+      # ---- EC2 #1: copy files ----
+      - name: Copy compose/nginx to EC2 #1
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST_1 }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "docker-compose.yml,nginx/default.conf"
+          target: "/opt/mulmul"
+          strip_components: 0
+
+      # ---- EC2 #2: copy files ----
+      - name: Copy compose/nginx to EC2 #2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST_2 }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "docker-compose.yml,nginx/default.conf"
+          target: "/opt/mulmul"
+          strip_components: 0
+
+      # ---- EC2 #1: create .env + deploy ----
+      - name: Deploy to EC2 #1
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST_1 }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            mkdir -p /opt/mulmul/nginx /opt/mulmul/fe
+            cd /opt/mulmul
+
+            # ensure nginx file path (scp put it under /opt/mulmul/nginx/default.conf? 아니면 /opt/mulmul/default.conf로 올 수 있음)
+            # scp target 구조를 안정화: nginx/default.conf가 /opt/mulmul/nginx/default.conf로 존재해야 함
+            if [ -f "/opt/mulmul/nginx/default.conf" ]; then
+              echo "nginx config OK"
+            else
+              # fallback: 파일이 /opt/mulmul/default.conf로 들어온 경우 옮김
+              if [ -f "/opt/mulmul/default.conf" ]; then
+                mv /opt/mulmul/default.conf /opt/mulmul/nginx/default.conf
+              fi
+            fi
+
+            # Create .env (persist on server)
+            cat > /opt/mulmul/.env <<EOF
+            # runtime vars
+            DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
+            IMAGE_TAG=${{ github.event.workflow_run.head_sha }}
+
+            SPRING_DATASOURCE_URL=${{ secrets.SPRING_DATASOURCE_URL }}
+            SPRING_DATASOURCE_USERNAME=${{ secrets.SPRING_DATASOURCE_USERNAME }}
+            SPRING_DATASOURCE_PASSWORD=${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            JWT_ACCESS_EXPIRES_MIN=${{ secrets.JWT_ACCESS_EXPIRES_MIN }}
+            JWT_REFRESH_EXPIRES_DAYS=${{ secrets.JWT_REFRESH_EXPIRES_DAYS }}
+
+            KAKAO_CLIENT_ID=${{ secrets.KAKAO_CLIENT_ID }}
+            KAKAO_CLIENT_SECRET=${{ secrets.KAKAO_CLIENT_SECRET }}
+            KAKAO_REDIRECT_URI=${{ secrets.KAKAO_REDIRECT_URI }}
+            EOF
+
+            chmod 600 /opt/mulmul/.env
+
+            # Pull & Up
+            docker-compose pull
+            docker-compose up -d --remove-orphans
+            docker image prune -f
+
+      # ---- EC2 #2: create .env + deploy ----
+      - name: Deploy to EC2 #2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST_2 }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            mkdir -p /opt/mulmul/nginx /opt/mulmul/fe
+            cd /opt/mulmul
+
+            if [ -f "/opt/mulmul/nginx/default.conf" ]; then
+              echo "nginx config OK"
+            else
+              if [ -f "/opt/mulmul/default.conf" ]; then
+                mv /opt/mulmul/default.conf /opt/mulmul/nginx/default.conf
+              fi
+            fi
+
+            cat > /opt/mulmul/.env <<EOF
+            DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
+            IMAGE_TAG=${{ github.event.workflow_run.head_sha }}
+
+            SPRING_DATASOURCE_URL=${{ secrets.SPRING_DATASOURCE_URL }}
+            SPRING_DATASOURCE_USERNAME=${{ secrets.SPRING_DATASOURCE_USERNAME }}
+            SPRING_DATASOURCE_PASSWORD=${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            JWT_ACCESS_EXPIRES_MIN=${{ secrets.JWT_ACCESS_EXPIRES_MIN }}
+            JWT_REFRESH_EXPIRES_DAYS=${{ secrets.JWT_REFRESH_EXPIRES_DAYS }}
+
+            KAKAO_CLIENT_ID=${{ secrets.KAKAO_CLIENT_ID }}
+            KAKAO_CLIENT_SECRET=${{ secrets.KAKAO_CLIENT_SECRET }}
+            KAKAO_REDIRECT_URI=${{ secrets.KAKAO_REDIRECT_URI }}
+            EOF
+
+            chmod 600 /opt/mulmul/.env
+
+            docker-compose pull
+            docker-compose up -d --remove-orphans
+            docker image prune -f
 

@@ -83,8 +83,8 @@ jobs:
             chmod 600 /opt/mulmul/.env
 
             # Pull & Up
-            docker-compose pull
-            docker-compose up -d --remove-orphans
+            docker compose pull
+            docker compose up -d --remove-orphans
             docker image prune -f
 
       # ---- EC2 #2: create .env + deploy ----
